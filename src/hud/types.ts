@@ -174,6 +174,16 @@ export interface RateLimits {
   monthlyResetsAt?: Date | null;
 }
 
+/**
+ * Result of fetching usage data from the API.
+ * - rateLimits: The rate limit data (null if no data available)
+ * - error: Set when the API call fails (network/timeout/HTTP error)
+ */
+export interface UsageResult {
+  rateLimits: RateLimits | null;
+  error?: 'network' | 'timeout' | 'http';
+}
+
 // ============================================================================
 // Custom Rate Limit Provider
 // ============================================================================
@@ -277,8 +287,8 @@ export interface HudRenderContext {
   /** Last activated skill from transcript */
   lastSkill: SkillInvocation | null;
 
-  /** Rate limits (5h and weekly) from built-in Anthropic/z.ai providers */
-  rateLimits: RateLimits | null;
+  /** Rate limits result from built-in Anthropic/z.ai providers (includes error state) */
+  rateLimitsResult: UsageResult | null;
 
   /** Custom rate limit buckets from rateLimitsProvider command (null when not configured) */
   customBuckets: CustomProviderResult | null;

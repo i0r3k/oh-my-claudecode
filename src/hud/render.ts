@@ -15,7 +15,7 @@ import { renderSkills, renderLastSkill } from './elements/skills.js';
 import { renderContext, renderContextWithBar } from './elements/context.js';
 import { renderBackground } from './elements/background.js';
 import { renderPrd } from './elements/prd.js';
-import { renderRateLimits, renderRateLimitsWithBar, renderCustomBuckets } from './elements/limits.js';
+import { renderRateLimits, renderRateLimitsWithBar, renderCustomBuckets, renderRateLimitsError } from './elements/limits.js';
 import { renderPermission } from './elements/permission.js';
 import { renderThinking } from './elements/thinking.js';
 import { renderSession } from './elements/session.js';
@@ -155,12 +155,17 @@ export async function render(context: HudRenderContext, config: HudConfig): Prom
     }
   }
 
-  // Rate limits (5h and weekly)
-  if (enabledElements.rateLimits && context.rateLimits) {
-    const limits = enabledElements.useBars
-      ? renderRateLimitsWithBar(context.rateLimits)
-      : renderRateLimits(context.rateLimits);
-    if (limits) elements.push(limits);
+  // Rate limits (5h and weekly) - show error indicator or data
+  if (enabledElements.rateLimits && context.rateLimitsResult) {
+    const errorIndicator = renderRateLimitsError(context.rateLimitsResult);
+    if (errorIndicator) {
+      elements.push(errorIndicator);
+    } else if (context.rateLimitsResult.rateLimits) {
+      const limits = enabledElements.useBars
+        ? renderRateLimitsWithBar(context.rateLimitsResult.rateLimits)
+        : renderRateLimits(context.rateLimitsResult.rateLimits);
+      if (limits) elements.push(limits);
+    }
   }
 
   // Custom rate limit buckets

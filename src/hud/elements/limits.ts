@@ -5,7 +5,7 @@
  * and custom rate limit buckets from the rateLimitsProvider command.
  */
 
-import type { RateLimits, CustomProviderResult, CustomBucketUsage } from '../types.js';
+import type { RateLimits, CustomProviderResult, CustomBucketUsage, UsageResult } from '../types.js';
 import { RESET } from '../colors.js';
 
 const GREEN = '\x1b[32m';
@@ -254,4 +254,16 @@ export function renderCustomBuckets(
   });
 
   return parts.join(' ');
+}
+
+/**
+ * Render rate limits error indicator.
+ * Shows [API err] in yellow when API call fails.
+ *
+ * @param result - The UsageResult containing error information
+ * @returns Error indicator string or null if no error
+ */
+export function renderRateLimitsError(result: UsageResult | null): string | null {
+  if (!result?.error) return null;
+  return `${YELLOW}[API err]${RESET}`;
 }

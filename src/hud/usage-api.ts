@@ -18,7 +18,7 @@ import { join, dirname } from 'path';
 import { execSync } from 'child_process';
 import { createHash } from 'crypto';
 import https from 'https';
-import type { RateLimits } from './types.js';
+import type { RateLimits, UsageResult } from './types.js';
 
 // Cache configuration
 const CACHE_TTL_SUCCESS_MS = 30 * 1000; // 30 seconds for successful responses
@@ -577,12 +577,14 @@ export function parseZaiResponse(response: ZaiQuotaResponse): RateLimits | null 
 /**
  * Get usage data (with caching)
  *
- * Returns null if:
+ * Returns { rateLimits: null } if:
  * - No OAuth credentials available (API users)
  * - Credentials expired
- * - API call failed
+ *
+ * Returns { rateLimits: null, error: 'network' | 'timeout' | 'http' } if:
+ * - API call failed due to network/timeout/HTTP error
  */
-export async function getUsage(): Promise<RateLimits | null> {
+export async function getUsage(): Promise<UsageResult> {
   const baseUrl = process.env.ANTHROPIC_BASE_URL;
   const authToken = process.env.ANTHROPIC_AUTH_TOKEN;
   const isZai = baseUrl != null && isZaiHost(baseUrl);
@@ -591,7 +593,7 @@ export async function getUsage(): Promise<RateLimits | null> {
   // Check cache first (source must match to avoid cross-provider stale data)
   const cache = readCache();
   if (cache && isCacheValid(cache) && cache.source === currentSource) {
-    return cache.data;
+    return { rateLimits: cache.data };
   }
 
   // z.ai path (must precede OAuth check to avoid stale Anthropic credentials)
@@ -599,12 +601,12 @@ export async function getUsage(): Promise<RateLimits | null> {
     const response = await fetchUsageFromZai();
     if (!response) {
       writeCache(null, true, 'zai');
-      return null;
+      return { rateLimits: null, error: 'network' };
     }
 
     const usage = parseZaiResponse(response);
     writeCache(usage, !usage, 'zai');
-    return usage;
+    return { rateLimits: usage };
   }
 
   // Anthropic OAuth path (official Claude Code support)
@@ -634,16 +636,16 @@ export async function getUsage(): Promise<RateLimits | null> {
       const response = await fetchUsageFromApi(creds.accessToken);
       if (!response) {
         writeCache(null, true, 'anthropic');
-        return null;
+        return { rateLimits: null, error: 'network' };
       }
 
       const usage = parseUsageResponse(response);
       writeCache(usage, !usage, 'anthropic');
-      return usage;
+      return { rateLimits: usage };
     }
   }
 
-  // No credentials available
+  // No credentials available - not an error, just no data
   writeCache(null, true, 'anthropic');
-  return null;
+  return { rateLimits: null };
 }
