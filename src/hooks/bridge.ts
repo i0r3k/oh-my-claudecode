@@ -674,6 +674,12 @@ async function processPersistentMode(input: HookInput): Promise<HookOutput> {
   const result = await checkPersistentModes(sessionId, directory, stopContext);
   const output = createHookOutput(result);
 
+  // Skip bridge.ts team enforcement if checkTeamPipeline() in persistent-mode
+  // already handled this stop event. Prevents double continuation messages.
+  if (result.mode === 'team') {
+    return output;
+  }
+
   const teamState = readTeamStagedState(directory, sessionId);
   if (!teamState || teamState.active !== true || isTeamStateTerminal(teamState)) {
     writeTeamStopBreakerCount(directory, sessionId, 0);

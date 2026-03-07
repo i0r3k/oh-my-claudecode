@@ -211,7 +211,9 @@ describe('processHook - Routing Matrix', () => {
         } as HookInput);
 
         expect(result.continue).toBe(false);
-        expect(result.message).toContain('[TEAM MODE CONTINUATION]');
+        // checkTeamPipeline() in persistent-mode now handles team enforcement
+        // instead of bridge.ts's own team enforcement
+        expect(result.message).toContain('team-pipeline-continuation');
       } finally {
         rmSync(tempDir, { recursive: true, force: true });
       }
