@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main, dev, 'release/**']
   pull_request:
-    branches: [main, dev]
+    branches: [main, dev, 'release/**']
   workflow_dispatch:
 
 concurrency:
@@ -69,6 +69,9 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Verify generated artifacts are up to date
+        run: npm run check:generated-artifacts
 
       - name: Check dist size
         run: |
