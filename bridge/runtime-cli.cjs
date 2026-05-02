@@ -4970,8 +4970,8 @@ async function monitorTeam(teamName, cwd, workerPaneIds = []) {
   const taskScanStartedAt = Date.now();
   const taskCounts = { pending: 0, inProgress: 0, completed: 0, failed: 0 };
   try {
-    const { readdir: readdir3 } = await import("fs/promises");
-    const taskFiles = await readdir3((0, import_path16.join)(root, "tasks"));
+    const { readdir: readdir4 } = await import("fs/promises");
+    const taskFiles = await readdir4((0, import_path16.join)(root, "tasks"));
     for (const f of taskFiles.filter((f2) => f2.endsWith(".json"))) {
       const task = await readJsonSafe2((0, import_path16.join)(root, "tasks", f));
       if (task?.status === "pending") taskCounts.pending++;
@@ -6289,8 +6289,8 @@ async function readShutdownAck(teamName, workerName2, cwd, requestedAfter) {
 async function listTasksFromFiles(teamName, cwd) {
   const tasksDir = absPath(cwd, TeamPaths.tasks(teamName));
   if (!(0, import_fs17.existsSync)(tasksDir)) return [];
-  const { readdir: readdir3 } = await import("fs/promises");
-  const entries = await readdir3(tasksDir);
+  const { readdir: readdir4 } = await import("fs/promises");
+  const entries = await readdir4(tasksDir);
   const tasks = [];
   for (const entry of entries) {
     const match = /^(?:task-)?(\d+)\.json$/.exec(entry);

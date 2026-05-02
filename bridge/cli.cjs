@@ -27519,34 +27519,59 @@ var init_tasks = __esm({
 // src/team/team-ops.ts
 var team_ops_exports = {};
 __export(team_ops_exports, {
+  ABSOLUTE_MAX_WORKERS: () => ABSOLUTE_MAX_WORKERS,
+  DEFAULT_MAX_WORKERS: () => DEFAULT_MAX_WORKERS,
+  resolveDispatchLockTimeoutMs: () => resolveDispatchLockTimeoutMs,
   teamAppendEvent: () => teamAppendEvent,
   teamBroadcast: () => teamBroadcast,
   teamClaimTask: () => teamClaimTask,
   teamCleanup: () => teamCleanup,
+  teamComputeTaskReadiness: () => teamComputeTaskReadiness,
   teamCreateTask: () => teamCreateTask,
+  teamEnqueueDispatchRequest: () => teamEnqueueDispatchRequest,
   teamGetSummary: () => teamGetSummary,
+  teamInit: () => teamInit,
+  teamListDispatchRequests: () => teamListDispatchRequests,
   teamListMailbox: () => teamListMailbox,
   teamListTasks: () => teamListTasks,
+  teamMarkDispatchRequestDelivered: () => teamMarkDispatchRequestDelivered,
+  teamMarkDispatchRequestNotified: () => teamMarkDispatchRequestNotified,
+  teamMarkLeaderSessionStopped: () => teamMarkLeaderSessionStopped,
   teamMarkMessageDelivered: () => teamMarkMessageDelivered,
   teamMarkMessageNotified: () => teamMarkMessageNotified,
+  teamMarkOwnedTeamsLeaderSessionStopped: () => teamMarkOwnedTeamsLeaderSessionStopped,
+  teamMigrateV1ToV2: () => teamMigrateV1ToV2,
+  teamNormalizeGovernance: () => normalizeTeamGovernance,
+  teamNormalizePolicy: () => teamNormalizePolicy,
   teamReadConfig: () => teamReadConfig,
+  teamReadDispatchRequest: () => teamReadDispatchRequest,
+  teamReadLeaderAttention: () => teamReadLeaderAttention,
   teamReadManifest: () => teamReadManifest,
   teamReadMonitorSnapshot: () => teamReadMonitorSnapshot,
+  teamReadPhase: () => teamReadPhase,
   teamReadShutdownAck: () => teamReadShutdownAck,
   teamReadTask: () => teamReadTask,
   teamReadTaskApproval: () => teamReadTaskApproval,
   teamReadWorkerHeartbeat: () => teamReadWorkerHeartbeat,
   teamReadWorkerStatus: () => teamReadWorkerStatus,
+  teamReclaimExpiredTaskClaim: () => teamReclaimExpiredTaskClaim,
   teamReleaseTaskClaim: () => teamReleaseTaskClaim,
+  teamSaveConfig: () => teamSaveConfig,
   teamSendMessage: () => teamSendMessage,
+  teamTransitionDispatchRequest: () => teamTransitionDispatchRequest,
   teamTransitionTaskStatus: () => teamTransitionTaskStatus,
   teamUpdateTask: () => teamUpdateTask,
   teamUpdateWorkerHeartbeat: () => teamUpdateWorkerHeartbeat,
+  teamWithScalingLock: () => teamWithScalingLock,
+  teamWriteLeaderAttention: () => teamWriteLeaderAttention,
+  teamWriteManifest: () => teamWriteManifest,
   teamWriteMonitorSnapshot: () => teamWriteMonitorSnapshot,
+  teamWritePhase: () => teamWritePhase,
   teamWriteShutdownRequest: () => teamWriteShutdownRequest,
   teamWriteTaskApproval: () => teamWriteTaskApproval,
   teamWriteWorkerIdentity: () => teamWriteWorkerIdentity,
   teamWriteWorkerInbox: () => teamWriteWorkerInbox,
+  teamWriteWorkerStatus: () => teamWriteWorkerStatus,
   writeAtomic: () => writeAtomic
 });
 function teamDir2(teamName, cwd2) {
@@ -27683,6 +27708,12 @@ function mergeTeamConfigSources(config2, manifest) {
     max_workers: Math.max(config2.max_workers ?? 0, 20)
   });
 }
+async function teamInit(config2, cwd2) {
+  await teamSaveConfig(config2, cwd2);
+}
+async function teamSaveConfig(config2, cwd2) {
+  await writeAtomic(absPath(cwd2, TeamPaths.config(config2.name)), JSON.stringify(config2, null, 2));
+}
 async function teamReadConfig(teamName, cwd2) {
   const [manifest, config2] = await Promise.all([
     teamReadManifest(teamName, cwd2),
@@ -27694,6 +27725,21 @@ async function teamReadManifest(teamName, cwd2) {
   const manifestPath = absPath(cwd2, TeamPaths.manifest(teamName));
   const manifest = await readJsonSafe3(manifestPath);
   return manifest ? normalizeTeamManifest(manifest) : null;
+}
+async function teamWriteManifest(manifest, cwd2) {
+  await writeAtomic(absPath(cwd2, TeamPaths.manifest(manifest.name)), JSON.stringify(manifest, null, 2));
+}
+async function teamMigrateV1ToV2(teamName, cwd2) {
+  return teamReadManifest(teamName, cwd2);
+}
+function teamNormalizePolicy(policy) {
+  return {
+    display_mode: policy?.display_mode ?? "split_pane",
+    worker_launch_mode: policy?.worker_launch_mode ?? "prompt",
+    dispatch_mode: policy?.dispatch_mode ?? "hook_preferred_with_fallback",
+    dispatch_ack_timeout_ms: policy?.dispatch_ack_timeout_ms ?? 15e3,
+    ...normalizeTeamGovernance(void 0, policy)
+  };
 }
 async function teamCleanup(teamName, cwd2) {
   await (0, import_promises7.rm)(teamDir2(teamName, cwd2), { recursive: true, force: true });
@@ -27814,6 +27860,12 @@ async function teamClaimTask(teamName, taskId, workerName2, expectedVersion, cwd
     taskFilePath: (tn, tid, c) => canonicalTaskFilePath(tn, tid, c),
     writeAtomic
   });
+}
+async function teamComputeTaskReadiness(teamName, taskId, cwd2) {
+  return computeTaskReadiness(teamName, taskId, cwd2, { readTask: teamReadTask });
+}
+async function teamReclaimExpiredTaskClaim() {
+  return { ok: false, error: "not_supported" };
 }
 async function teamTransitionTaskStatus(teamName, taskId, from, to, claimToken, cwd2, terminalData) {
   return transitionTaskStatus(taskId, from, to, claimToken, terminalData, {
@@ -27960,6 +28012,61 @@ async function teamMarkMessageNotified(teamName, workerName2, messageId, cwd2) {
     return true;
   });
 }
+async function teamEnqueueDispatchRequest(teamName, input, cwd2) {
+  const request = {
+    request_id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    kind: input.kind,
+    team_name: teamName,
+    to_worker: input.to_worker,
+    worker_index: input.worker_index,
+    pane_id: input.pane_id,
+    trigger_message: input.trigger_message,
+    message_id: input.message_id,
+    inbox_correlation_key: input.inbox_correlation_key,
+    transport_preference: input.transport_preference ?? "hook_preferred_with_fallback",
+    fallback_allowed: input.fallback_allowed ?? true,
+    status: "pending",
+    attempt_count: 0,
+    created_at: (/* @__PURE__ */ new Date()).toISOString(),
+    updated_at: (/* @__PURE__ */ new Date()).toISOString(),
+    last_reason: input.last_reason,
+    intent: input.intent
+  };
+  const p = absPath(cwd2, (0, import_node_path6.join)(TeamPaths.root(teamName), "dispatch", `${request.request_id}.json`));
+  await writeAtomic(p, JSON.stringify(request, null, 2));
+  return request;
+}
+async function teamListDispatchRequests(teamName, cwd2) {
+  const dir = absPath(cwd2, (0, import_node_path6.join)(TeamPaths.root(teamName), "dispatch"));
+  try {
+    const entries = (await (0, import_promises7.readdir)(dir)).filter((file) => file.endsWith(".json"));
+    const requests = await Promise.all(entries.map((file) => readJsonSafe3((0, import_node_path6.join)(dir, file))));
+    return requests.filter((request) => Boolean(request));
+  } catch {
+    return [];
+  }
+}
+async function teamReadDispatchRequest(teamName, requestId, cwd2) {
+  return readJsonSafe3(absPath(cwd2, (0, import_node_path6.join)(TeamPaths.root(teamName), "dispatch", `${requestId}.json`)));
+}
+async function teamTransitionDispatchRequest(teamName, requestId, status, patch, cwd2) {
+  const current = await teamReadDispatchRequest(teamName, requestId, cwd2);
+  if (!current) return null;
+  const updated = { ...current, ...patch, status, updated_at: (/* @__PURE__ */ new Date()).toISOString() };
+  await writeAtomic(absPath(cwd2, (0, import_node_path6.join)(TeamPaths.root(teamName), "dispatch", `${requestId}.json`)), JSON.stringify(updated, null, 2));
+  return updated;
+}
+async function teamMarkDispatchRequestNotified(teamName, requestId, cwd2) {
+  return teamTransitionDispatchRequest(teamName, requestId, "notified", { notified_at: (/* @__PURE__ */ new Date()).toISOString() }, cwd2);
+}
+async function teamMarkDispatchRequestDelivered(teamName, requestId, cwd2) {
+  return teamTransitionDispatchRequest(teamName, requestId, "delivered", { delivered_at: (/* @__PURE__ */ new Date()).toISOString() }, cwd2);
+}
+function resolveDispatchLockTimeoutMs(env2 = process.env) {
+  const raw = env2.OMC_TEAM_DISPATCH_LOCK_TIMEOUT_MS ?? env2.OMX_TEAM_DISPATCH_LOCK_TIMEOUT_MS;
+  const parsed = raw ? Number(raw) : Number.NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 5e3;
+}
 async function teamAppendEvent(teamName, event, cwd2) {
   const full = {
     event_id: (0, import_node_crypto.randomUUID)(),
@@ -28075,7 +28182,28 @@ async function teamWriteMonitorSnapshot(teamName, snapshot, cwd2) {
   const p = absPath(cwd2, TeamPaths.monitorSnapshot(teamName));
   await writeAtomic(p, JSON.stringify(snapshot, null, 2));
 }
-var import_node_crypto, import_node_fs5, import_promises7, import_node_path6;
+async function teamReadPhase(teamName, cwd2) {
+  return readJsonSafe3(absPath(cwd2, TeamPaths.phaseState(teamName)));
+}
+async function teamWritePhase(teamName, phase, cwd2) {
+  await writeAtomic(absPath(cwd2, TeamPaths.phaseState(teamName)), JSON.stringify(phase, null, 2));
+}
+async function teamReadLeaderAttention() {
+  return null;
+}
+async function teamWriteLeaderAttention() {
+}
+async function teamMarkLeaderSessionStopped() {
+}
+async function teamMarkOwnedTeamsLeaderSessionStopped() {
+}
+async function teamWriteWorkerStatus(teamName, workerName2, status, cwd2) {
+  await writeAtomic(absPath(cwd2, TeamPaths.workerStatus(teamName, workerName2)), JSON.stringify(status, null, 2));
+}
+async function teamWithScalingLock(_teamName, _cwd, fn) {
+  return fn();
+}
+var import_node_crypto, import_node_fs5, import_promises7, import_node_path6, DEFAULT_MAX_WORKERS, ABSOLUTE_MAX_WORKERS;
 var init_team_ops = __esm({
   "src/team/team-ops.ts"() {
     "use strict";
@@ -28089,6 +28217,8 @@ var init_team_ops = __esm({
     init_contracts();
     init_tasks();
     init_worker_canonicalization();
+    DEFAULT_MAX_WORKERS = 20;
+    ABSOLUTE_MAX_WORKERS = 20;
   }
 });
 
@@ -28460,8 +28590,8 @@ async function writeWorkerIdentity(teamName, workerName2, workerInfo, cwd2) {
 async function listTasksFromFiles(teamName, cwd2) {
   const tasksDir = absPath(cwd2, TeamPaths.tasks(teamName));
   if (!(0, import_fs66.existsSync)(tasksDir)) return [];
-  const { readdir: readdir6 } = await import("fs/promises");
-  const entries = await readdir6(tasksDir);
+  const { readdir: readdir7 } = await import("fs/promises");
+  const entries = await readdir7(tasksDir);
   const tasks = [];
   for (const entry of entries) {
     const match = /^(?:task-)?(\d+)\.json$/.exec(entry);
@@ -30492,7 +30622,7 @@ function isDispatchKind(value) {
 function isDispatchStatus(value) {
   return value === "pending" || value === "notified" || value === "delivered" || value === "failed";
 }
-function resolveDispatchLockTimeoutMs(env2 = process.env) {
+function resolveDispatchLockTimeoutMs2(env2 = process.env) {
   const raw = env2[OMC_DISPATCH_LOCK_TIMEOUT_ENV];
   if (raw === void 0 || raw === "") return DEFAULT_DISPATCH_LOCK_TIMEOUT_MS;
   const parsed = Number(raw);
@@ -30505,7 +30635,7 @@ async function withDispatchLock(teamName, cwd2, fn) {
   const lockDir = absPath(cwd2, TeamPaths.dispatchLockDir(teamName));
   const ownerPath = (0, import_path88.join)(lockDir, "owner");
   const ownerToken = `${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}`;
-  const timeoutMs = resolveDispatchLockTimeoutMs(process.env);
+  const timeoutMs = resolveDispatchLockTimeoutMs2(process.env);
   const deadline = Date.now() + timeoutMs;
   let pollMs = DISPATCH_LOCK_INITIAL_POLL_MS;
   await (0, import_promises12.mkdir)((0, import_path88.dirname)(lockDir), { recursive: true });
@@ -35027,8 +35157,8 @@ async function monitorTeam(teamName, cwd2, workerPaneIds = []) {
   const taskScanStartedAt = Date.now();
   const taskCounts = { pending: 0, inProgress: 0, completed: 0, failed: 0 };
   try {
-    const { readdir: readdir6 } = await import("fs/promises");
-    const taskFiles = await readdir6((0, import_path94.join)(root2, "tasks"));
+    const { readdir: readdir7 } = await import("fs/promises");
+    const taskFiles = await readdir7((0, import_path94.join)(root2, "tasks"));
     for (const f of taskFiles.filter((f2) => f2.endsWith(".json"))) {
       const task = await readJsonSafe5((0, import_path94.join)(root2, "tasks", f));
       if (task?.status === "pending") taskCounts.pending++;
