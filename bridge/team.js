@@ -5582,7 +5582,7 @@ var init_file_lock = __esm({
 });
 
 // src/team/git-worktree.ts
-import { existsSync as existsSync12, readFileSync as readFileSync7, readdirSync as readdirSync3, rmSync as rmSync2, unlinkSync as unlinkSync4, writeFileSync as writeFileSync2 } from "node:fs";
+import { existsSync as existsSync12, readFileSync as readFileSync7, readdirSync as readdirSync3, realpathSync as realpathSync2, rmSync as rmSync2, unlinkSync as unlinkSync4, writeFileSync as writeFileSync2 } from "node:fs";
 import { join as join16, resolve as resolve3 } from "node:path";
 import { execFileSync as execFileSync3 } from "node:child_process";
 function getWorktreePath(repoRoot, teamName, workerName) {
@@ -5610,14 +5610,21 @@ function assertCleanLeaderWorktree(repoRoot) {
     throw error;
   }
 }
+function canonicalWorktreePath(path4) {
+  try {
+    return realpathSync2.native(path4);
+  } catch {
+    return resolve3(path4);
+  }
+}
 function getRegisteredWorktreeBranch(repoRoot, wtPath) {
   try {
     const output2 = git(repoRoot, ["worktree", "list", "--porcelain"]);
-    const resolvedWtPath = resolve3(wtPath);
+    const resolvedWtPath = canonicalWorktreePath(wtPath);
     let currentMatches = false;
     for (const line of output2.split("\n")) {
       if (line.startsWith("worktree ")) {
-        currentMatches = resolve3(line.slice("worktree ".length).trim()) === resolvedWtPath;
+        currentMatches = canonicalWorktreePath(line.slice("worktree ".length).trim()) === resolvedWtPath;
         continue;
       }
       if (!currentMatches) continue;
@@ -5631,8 +5638,8 @@ function getRegisteredWorktreeBranch(repoRoot, wtPath) {
 function isRegisteredWorktreePath(repoRoot, wtPath) {
   try {
     const output2 = git(repoRoot, ["worktree", "list", "--porcelain"]);
-    const resolvedWtPath = resolve3(wtPath);
-    return output2.split("\n").some((line) => line.startsWith("worktree ") && resolve3(line.slice("worktree ".length).trim()) === resolvedWtPath);
+    const resolvedWtPath = canonicalWorktreePath(wtPath);
+    return output2.split("\n").some((line) => line.startsWith("worktree ") && canonicalWorktreePath(line.slice("worktree ".length).trim()) === resolvedWtPath);
   } catch {
     return false;
   }
@@ -7405,6 +7412,7 @@ async function startMergeOrchestrator(config) {
   const workers = /* @__PURE__ */ new Map();
   const pausedWorkers = /* @__PURE__ */ new Set();
   const mutex = createMutex();
+  const pollMutex = createMutex();
   let stopped = false;
   function persistState() {
     const payload = {
@@ -7587,56 +7595,58 @@ async function startMergeOrchestrator(config) {
     });
   }
   async function runPollOnce() {
-    if (stopped) return;
-    for (const entry of workers.values()) {
-      const skipModulo = Math.min(30, Math.pow(2, entry.consecutiveFailures));
-      if (skipModulo > 1 && pollTickCount % skipModulo !== 0) {
-        continue;
-      }
-      if (pausedWorkers.has(entry.workerName)) {
-        if (!isRebaseInProgress(entry.workerWorktreePath)) {
-          await handleRebaseResolution(entry);
-        } else {
+    await pollMutex(async () => {
+      if (stopped) return;
+      for (const entry of workers.values()) {
+        const skipModulo = Math.min(30, Math.pow(2, entry.consecutiveFailures));
+        if (skipModulo > 1 && pollTickCount % skipModulo !== 0) {
           continue;
         }
-      }
-      let currentSha;
-      try {
-        currentSha = gitRevParseHead(config.repoRoot, entry.workerBranch);
-      } catch (err) {
-        entry.consecutiveFailures += 1;
-        const reason = err instanceof Error ? err.message : String(err);
-        await appendEvent(config.repoRoot, config.teamName, {
-          type: "commit_observed",
-          worker: entry.workerName,
-          reason: `rev_parse_failed:${reason}`
-        });
-        continue;
-      }
-      if (currentSha && currentSha !== entry.lastObservedSha) {
-        entry.lastObservedSha = currentSha;
-        try {
-          persistState();
-        } catch {
+        if (pausedWorkers.has(entry.workerName)) {
+          if (!isRebaseInProgress(entry.workerWorktreePath)) {
+            await handleRebaseResolution(entry);
+          } else {
+            continue;
+          }
         }
-        await appendEvent(config.repoRoot, config.teamName, {
-          type: "commit_observed",
-          worker: entry.workerName,
-          data: { sha: currentSha }
-        });
+        let currentSha;
         try {
-          await attemptMergeForWorker(entry);
+          currentSha = gitRevParseHead(config.repoRoot, entry.workerBranch);
         } catch (err) {
           entry.consecutiveFailures += 1;
           const reason = err instanceof Error ? err.message : String(err);
           await appendEvent(config.repoRoot, config.teamName, {
-            type: "merge_conflict",
+            type: "commit_observed",
             worker: entry.workerName,
-            reason: `merge_threw:${reason}`
+            reason: `rev_parse_failed:${reason}`
           });
+          continue;
+        }
+        if (currentSha && currentSha !== entry.lastObservedSha) {
+          entry.lastObservedSha = currentSha;
+          try {
+            persistState();
+          } catch {
+          }
+          await appendEvent(config.repoRoot, config.teamName, {
+            type: "commit_observed",
+            worker: entry.workerName,
+            data: { sha: currentSha }
+          });
+          try {
+            await attemptMergeForWorker(entry);
+          } catch (err) {
+            entry.consecutiveFailures += 1;
+            const reason = err instanceof Error ? err.message : String(err);
+            await appendEvent(config.repoRoot, config.teamName, {
+              type: "merge_conflict",
+              worker: entry.workerName,
+              reason: `merge_threw:${reason}`
+            });
+          }
         }
       }
-    }
+    });
   }
   async function handleRebaseResolution(entry) {
     pausedWorkers.delete(entry.workerName);
