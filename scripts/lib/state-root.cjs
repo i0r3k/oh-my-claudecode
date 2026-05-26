@@ -12,6 +12,7 @@
 'use strict';
 
 const { join, basename } = require('path');
+const { existsSync } = require('fs');
 const { createHash } = require('crypto');
 
 /**
@@ -76,7 +77,10 @@ async function resolveSessionStatePathsForHook(directory, stateName, sessionId) 
     return { readPath: legacy, writePath: legacy };
   }
   const sessionScoped = join(omcRoot, 'state', 'sessions', sessionId, `${normalizedName}.json`);
-  return { readPath: sessionScoped, writePath: sessionScoped };
+  // effectiveRead probes the session-scoped file first and falls back to the
+  // legacy path when it does not exist yet (mirrors resolveSessionStatePaths).
+  const readPath = existsSync(sessionScoped) ? sessionScoped : legacy;
+  return { readPath, writePath: sessionScoped };
 }
 
 module.exports = { resolveOmcStateRoot, resolveSessionStatePathsForHook };

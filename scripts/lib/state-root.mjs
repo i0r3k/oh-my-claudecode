@@ -19,6 +19,7 @@
  */
 
 import { join, basename } from 'path';
+import { existsSync } from 'fs';
 import { createHash } from 'crypto';
 import { pathToFileURL } from 'url';
 
@@ -82,5 +83,8 @@ export async function resolveSessionStatePathsForHook(directory, stateName, sess
     return { readPath: legacy, writePath: legacy };
   }
   const sessionScoped = join(omcRoot, 'state', 'sessions', sessionId, `${normalizedName}.json`);
-  return { readPath: sessionScoped, writePath: sessionScoped };
+  // effectiveRead probes the session-scoped file first and falls back to the
+  // legacy path when it does not exist yet (mirrors resolveSessionStatePaths).
+  const readPath = existsSync(sessionScoped) ? sessionScoped : legacy;
+  return { readPath, writePath: sessionScoped };
 }
